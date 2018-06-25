@@ -178,15 +178,26 @@ class AccountInvoiceLineAgent(models.Model):
     @api.depends('invoice_line.price_subtotal')
     def _compute_amount(self):
         for line in self:
+            inv = line.invoice_line.invoice_id
+            inv_line = line.invoice_line
             line.amount = 0.0
             if (not line.invoice_line.product_id.commission_free and
                     line.commission):
                 if line.commission.amount_base_type == 'net_amount':
-                    subtotal = (line.invoice_line.price_subtotal -
-                                (line.invoice_line.product_id.standard_price *
-                                 line.invoice_line.quantity))
-                else:
                     subtotal = line.invoice_line.price_subtotal
+                if line.commission.amount_base_type == 'gross_amount':
+                    if inv_line.invoice_line_tax_ids:
+                        currency = inv and inv.currency_id or None
+                        price = inv_line.price_unit * (
+                            1 - (inv_line.discount or 0.0) / 100.0)
+                        taxes = inv_line.invoice_line_tax_ids.compute_all(
+                            price, currency, inv_line.quantity,
+                            product=inv_line.product_id,
+                            partner=inv_line.invoice_id.partner_id)
+                        subtotal = taxes['total_included']
+                    else:
+                        subtotal = line.invoice_line.price_subtotal
+
                 if line.commission.commission_type == 'fixed':
                     line.amount = subtotal * (line.commission.fix_qty / 100.0)
                 else:
